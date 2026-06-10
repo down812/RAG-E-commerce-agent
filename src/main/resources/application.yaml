@@ -1,0 +1,147 @@
+server:
+  undertow:
+    # 必须与 spring 的 max-request-size 保持一致（1000MB = 1048576000 字节）
+    max-http-post-size: 1048576000
+    # 超时时间设置（解决慢网或大文件上传超时）
+    socket-timeout: 900000       # 15分钟（毫秒），比默认超时更长
+    # 线程优化（提升并发处理能力）
+    io-threads: 16
+    worker-threads: 256
+  port: 11650
+  servlet:
+    context-path: /
+  #   设置超时连接时长 毫秒
+  tomcat:
+    connection-timeout: 300000
+
+spring:
+  profiles:
+    active: dev
+  ai:
+    openai:
+      base-url: https://ark.cn-beijing.volces.com/api/v3/
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        completions-path: /chat/completions
+        options:
+          model: ep-20260514111645-lmgt2
+          max-tokens: 2048
+          temperature: 0.3
+      embedding:
+        base-url: https://dashscope.aliyuncs.com/compatible-mode
+        api-key: ${DASHSCOPE_API_KEY}
+        options:
+          model: text-embedding-v3
+          dimensions: 1024
+    vectorstore:
+      elasticsearch:
+        index-name: e_commerce_server
+        initialize-schema: true
+        dimensions: 1024
+        similarity: cosine
+    elasticsearch:
+      host: localhost
+      port: 9200
+      username: elastic
+      password: ${ELASTICSEARCH_PASSWORD}
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 1000MB
+      enabled: true
+      file-size-threshold: 0      # 新增：超过该值的文件写入磁盘（避免内存溢出）
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          starttls:
+            enable: false
+            socketFactory:
+              class: jakarta.net.ssl.SSLSocketFactory
+        debug: true
+    default-encoding: utf-8
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher # 强制使用旧版路径匹配器
+    async:
+      request-timeout: 60000 # 60秒超时
+
+  elasticsearch:
+    uris: http://localhost:9200
+    username: elastic
+    password: ${ELASTICSEARCH_PASSWORD}
+  datasource:
+    druid:
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      url: jdbc:mysql://localhost:3306/e_commerce_server?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+      username: ${DB_USERNAME}
+      password: ${DB_PASSWORD}
+    type: com.alibaba.druid.pool.DruidDataSource
+  data:
+    redis:
+      port: 6379
+      host: localhost
+      database: 2
+      password: ${REDIS_PASSWORD}
+      lettuce:
+        pool:
+          max-active: 200
+          max-idle: 50
+          min-idle: 10
+        shutdown-timeout: 10000
+        timeout: 30000
+
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+logging:
+  level:
+    org.springframework.ai: debug
+    com.ecommerceserver: info
+
+tech-pilot-server:
+  jwt:
+    # 设置jwt签名加密时使用的秘钥
+    user-secret-key: techPilotServer_user_token-->#%ABC
+    # 设置jwt过期时间
+    user-ttl: 86400
+    # 设置前端传递过来的令牌名称
+    user-token-name: token
+
+
+  file:
+    pathPrefix: /usr/local/project/smart-campus-service-assistant/data
+
+# springdoc-openapi项目配置
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: 'default'
+      paths-to-match: '/**'
+      packages-to-scan: com.ecommerceserver.controller
+# knife4j的增强配置，不需要增强可以不配
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+# OSS配置
+oss:
+  endpoint: https://oss-cn-hangzhou.aliyuncs.com
+  access-key-id: ${OSS_ACCESS_KEY_ID}
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET}
+  bucket-name: ${OSS_BUCKET_NAME}
+  base-path: products/
