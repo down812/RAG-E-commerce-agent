@@ -3,6 +3,7 @@ package com.ecommerceserver.handler;
 import com.ecommerceserver.exception.GlobalException;
 import com.ecommerceserver.result.Result;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -48,14 +49,33 @@ public class GlobalExceptionHandler {
      * 拦截未捕获异常
      */
     @ExceptionHandler(value = Throwable.class)
-    public Result<String> exceptionHandler(HttpServletRequest request, Throwable ex){
+    public void exceptionHandler(HttpServletRequest request, HttpServletResponse response, Throwable ex){
+        String accept = request.getHeader("Accept");
+        boolean isSSE = (accept != null && accept.contains("text/event-stream"));
+
+        if (isSSE) {
+            if (ex instanceof java.io.IOException && ex.getMessage() != null && ex.getMessage().contains("中止了一个已建立的连接")) {
+                log.warn("[SSE客户端断开连接] [{}] {}", request.getMethod(), request.getRequestURL().toString());
+            } else {
+                log.error("[SSE异常] [{}] {} [ex] {}", request.getMethod(), request.getRequestURL().toString(), ex.getMessage());
+            }
+            return;
+        }
+
         if(ex.getMessage() != null){
             log.error("[{}] {} [ex] {}", request.getMethod(), request.getRequestURL().toString(), ex, ex.getCause());
-            return Result.error(SYSTEM_ERROR);
+        } else {
+            log.error("[{}] {} ", request.getMethod(), getUrl(request), ex);
         }
-        log.error("[{}] {} ", request.getMethod(), getUrl(request), ex);
 
-        return Result.error(SYSTEM_ERROR);
+        response.setStatus(500);
+        response.setContentType("application/json;charset=UTF-8");
+        try {
+            response.getWriter().write("{\"code\":500,\"msg\":\"" + SYSTEM_ERROR + "\"}");
+            response.getWriter().flush();
+        } catch (java.io.IOException e) {
+            log.error("写入错误响应失败", e);
+        }
     }
 
     private String getUrl(HttpServletRequest request) {
