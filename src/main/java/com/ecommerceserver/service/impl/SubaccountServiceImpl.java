@@ -4,6 +4,8 @@ package com.ecommerceserver.service.impl;
 import cn.hutool.core.date.DateTime;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ecommerceserver.Enum.UserEnum;
+import com.ecommerceserver.context.LoginContext;
 import com.ecommerceserver.exception.BusinessException;
 import com.ecommerceserver.exception.BusinessNotFoundException;
 import com.ecommerceserver.mapper.UserMapper;
@@ -44,6 +46,15 @@ public class SubaccountServiceImpl implements SubaccountService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Result<?> createSubaccount(SubaccountCreateDTO createDTO) {
+        //0.检验身份 （超管只能创建管理员或者普通用户， 管理员只能创建普通用户）
+        Integer userType = LoginContext.getUser().getUserType();
+        if (userType == UserEnum.SUPER_ADMIN.getCode() && createDTO.getType() == UserEnum.SUPER_ADMIN.getCode()) {
+            throw new BusinessException(SUPER_ADMIN_CANNOT_CREATE_SUPER_ADMIN);
+        }
+        if (userType == UserEnum.ADMIN.getCode() &&
+                (createDTO.getType() == UserEnum.SUPER_ADMIN.getCode() ||  createDTO.getType() == UserEnum.ADMIN.getCode())) {
+            throw new BusinessException(ADMIN_CANNOT_CREATE_ADMIN_OR_SUPER_ADMIN);
+        }
         // 1. 校验账号是否已存在
         LambdaQueryWrapper<User> existsWrapper = new LambdaQueryWrapper<>();
         existsWrapper.eq(User::getIdentifier, createDTO.getIdentifier());

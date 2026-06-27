@@ -35,6 +35,7 @@ public class MessageConstant {
     public static final String CODE_SEND_FAIL = "验证码发送失败";
     public static final String CODE_SEND_FREQUENT = "验证码发送过于频繁，请稍后再试";
 
-
+    public static final String SUPER_ADMIN_CANNOT_CREATE_SUPER_ADMIN = "超级管理员不能创建超级管理员";
+    public static final String ADMIN_CANNOT_CREATE_ADMIN_OR_SUPER_ADMIN = "管理员不能创建管理员或超级管理员";
     public static final String LOGIN_FAILED = "登录失败";
    }

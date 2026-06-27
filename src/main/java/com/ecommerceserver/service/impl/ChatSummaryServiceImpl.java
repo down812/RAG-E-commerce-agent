@@ -43,6 +43,11 @@ public class ChatSummaryServiceImpl extends ServiceImpl<ChatSummaryMapper, ChatS
     private static final String RESULT_END_TAG = "【/RESULT】";
 
 
+    // 摘要生成节流：每累计 SUMMARY_EVERY_N 条助手消息才重新生成一次摘要，
+    // 避免每轮对话都触发一次完整 LLM 调用，降低整体负载与延迟。
+    // 不影响上下文质量：DatabaseChatMemory 每轮始终加载“最近6条消息 + 上一份摘要”，跳过轮次的近期消息仍在。
+    private static final long SUMMARY_EVERY_N = 3;
+
     @Override
     @Async
     public void generateSummaryAsync(String sessionId) {
@@ -52,6 +57,16 @@ public class ChatSummaryServiceImpl extends ServiceImpl<ChatSummaryMapper, ChatS
         }
 
         try {
+            // 节流判断：仅当本会话助手消息数为 SUMMARY_EVERY_N 的整数倍时才生成
+            long assistantCount = logService.count(new LambdaQueryWrapper<Log>()
+                    .eq(Log::getSessionId, sessionId)
+                    .eq(Log::getStatus, 1)
+                    .eq(Log::getMessageType, MessageType.ASSISTANT));
+            if (assistantCount > 0 && assistantCount % SUMMARY_EVERY_N != 0) {
+                log.debug("[会话摘要] sessionId={} 助手消息数={}，未达节流阈值，跳过本轮摘要", sessionId, assistantCount);
+                return;
+            }
+
             //获取最新的6条对话
             LambdaQueryWrapper<Log> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(Log::getSessionId, sessionId)

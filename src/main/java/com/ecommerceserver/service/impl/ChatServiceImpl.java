@@ -53,6 +53,7 @@ public class ChatServiceImpl implements ChatService {
     private final DatabaseChatMemory databaseChatMemory;
     private final ProductMapper productMapper;
     private final ChatSummaryService chatSummaryService;
+    private final org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor questionAnswerAdvisor;
 
     private final ConcurrentHashMap<String, Sinks.One<Void>> stopSignals = new ConcurrentHashMap<>();
 
@@ -92,7 +93,11 @@ public class ChatServiceImpl implements ChatService {
         StringBuilder pendingBuffer = new StringBuilder();
         java.util.concurrent.atomic.AtomicBoolean resultSentFlag = new java.util.concurrent.atomic.AtomicBoolean(false);
 
-        Flux<String> chunkFlux = chatClient
+        // 仅在“需要知识库”的轮次才挂载向量检索 Advisor：
+        // 上传了图片，或文本不属于纯问候/寒暄时，才走 embedding + ES 检索；纯问候直接跳过以降低首字延迟。
+        boolean needRetrieval = !mediaList.isEmpty() || needKnowledgeRetrieval(content);
+
+        ChatClient.ChatClientRequestSpec promptSpec = chatClient
                 .prompt()
                 .user(p -> {
                     if (!mediaList.isEmpty()) {
@@ -101,10 +106,16 @@ public class ChatServiceImpl implements ChatService {
                         p.text(content);
                     }
                 })
-                .advisors(a -> a
-                        .param(CHAT_MEMORY_CONVERSATION_ID_KEY, sessionId)
-                        .param("userId", userId != null ? userId : 0L)
-                        .param("messageId", messageId != null ? messageId : ""))
+                .advisors(a -> {
+                    a.param(CHAT_MEMORY_CONVERSATION_ID_KEY, sessionId)
+                            .param("userId", userId != null ? userId : 0L)
+                            .param("messageId", messageId != null ? messageId : "");
+                    if (needRetrieval) {
+                        a.advisors(questionAnswerAdvisor);
+                    }
+                });
+
+        Flux<String> chunkFlux = promptSpec
                 .stream()
                 .chatResponse()
                 .filter(r -> r.getResult().getOutput().getText() != null)
@@ -462,6 +473,37 @@ public class ChatServiceImpl implements ChatService {
         }
         return text.replaceAll("```json\\s*", "").replaceAll("```", "")
                 .replaceAll(RESULT_START_TAG, "").replaceAll(RESULT_END_TAG, "").trim();
+    }
+
+    // 纯问候/寒暄等无需检索知识库的短语（命中且消息很短时跳过向量检索）
+    private static final java.util.Set<String> CHITCHAT_KEYWORDS = java.util.Set.of(
+            "你好", "您好", "hi", "hello", "嗨", "在吗", "在不在",
+            "谢谢", "感谢", "多谢", "辛苦了", "再见", "拜拜", "晚安",
+            "你是谁", "你叫什么", "你能做什么", "你会什么", "介绍一下你", "怎么用",
+            "好的", "嗯嗯", "ok", "收到", "知道了"
+    );
+
+    /**
+     * 判断本轮是否需要检索向量知识库。
+     * 策略：保守优先——默认需要检索（保证回答质量），
+     * 仅当消息很短且整体就是纯问候/寒暄时才跳过，避免对“你好”这类也触发跨厂商 embedding + ES 检索。
+     */
+    private boolean needKnowledgeRetrieval(String content) {
+        if (content == null || content.isBlank()) {
+            return false;
+        }
+        String text = content.trim().toLowerCase();
+        // 较长的输入大概率含实质诉求，直接走检索
+        if (text.length() > 15) {
+            return true;
+        }
+        // 短消息：命中寒暄词则跳过检索，否则仍走检索（保守）
+        for (String kw : CHITCHAT_KEYWORDS) {
+            if (text.equals(kw) || text.contains(kw)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private List<Media> buildMediaList(List<MultipartFile> files) {

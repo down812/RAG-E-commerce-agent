@@ -31,6 +31,7 @@ public class DatabaseChatMemory implements ChatMemory {
 
     private final LogService logService;
     private final ChatSummaryService chatSummaryService;
+    private final java.util.concurrent.Executor taskExecutor;
 
     public static final ConcurrentHashMap<String, ContextData> contextDataCache = new ConcurrentHashMap<>();
     private final Set<String> stoppedMessages = ConcurrentHashMap.newKeySet();
@@ -46,9 +47,11 @@ public class DatabaseChatMemory implements ChatMemory {
     }
 
     @Autowired
-    public DatabaseChatMemory(LogService logService, ChatSummaryService chatSummaryService) {
+    public DatabaseChatMemory(LogService logService, ChatSummaryService chatSummaryService,
+                              @Qualifier("taskExecutor") java.util.concurrent.Executor taskExecutor) {
         this.logService = logService;
         this.chatSummaryService = chatSummaryService;
+        this.taskExecutor = taskExecutor;
     }
 
     @Override
@@ -104,20 +107,18 @@ public class DatabaseChatMemory implements ChatMemory {
     public List<Message> get(String conversationId, int lastN) {
         List<Message> messages = new ArrayList<>();
 
-        LambdaQueryWrapper<ChatSummary> summaryWrapper = new LambdaQueryWrapper<>();
-        summaryWrapper.eq(ChatSummary::getSessionId, conversationId);
-        ChatSummary chatSummary = chatSummaryService.getOne(summaryWrapper);
-
-        if (chatSummary != null && chatSummary.getSummary() != null && !chatSummary.getSummary().isBlank()) {
-            String summaryText = "【会话历史摘要】以下是之前对话的核心内容摘要，请结合此摘要理解当前对话：\n" + chatSummary.getSummary();
-            messages.add(new SystemMessage(summaryText));
-            log.debug("【会话记忆】加载摘要，sessionId={}", conversationId);
-        }
-
         ContextData ctx = contextDataCache.get(conversationId);
         Long userId = (ctx != null) ? ctx.userId : null;
-
         int limit = Math.min(lastN, 6);
+
+        // 摘要查询与最近消息查询彼此独立，并行执行以将耗时从 t1+t2 降为 max(t1,t2)。
+        // 摘要查询丢到线程池异步执行，最近消息查询在当前线程跑，最后合并，组装顺序保持不变。
+        java.util.concurrent.CompletableFuture<ChatSummary> summaryFuture =
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    LambdaQueryWrapper<ChatSummary> summaryWrapper = new LambdaQueryWrapper<>();
+                    summaryWrapper.eq(ChatSummary::getSessionId, conversationId);
+                    return chatSummaryService.getOne(summaryWrapper);
+                }, taskExecutor);
 
         LambdaQueryWrapper<Log> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Log::getSessionId, conversationId)
@@ -127,17 +128,48 @@ public class DatabaseChatMemory implements ChatMemory {
         if (userId != null) {
             wrapper.eq(Log::getUserId, userId);
         }
-
         List<Log> logs = logService.list(wrapper);
+
+        // 摘要为系统消息，需排在最近消息之前
+        ChatSummary chatSummary;
+        try {
+            chatSummary = summaryFuture.join();
+        } catch (Exception e) {
+            log.warn("【会话记忆】摘要异步查询失败，本轮跳过摘要，sessionId={}, 原因={}", conversationId, e.getMessage());
+            chatSummary = null;
+        }
+        if (chatSummary != null && chatSummary.getSummary() != null && !chatSummary.getSummary().isBlank()) {
+            String summaryText = "【会话历史摘要】以下是之前对话的核心内容摘要，请结合此摘要理解当前对话：\n" + chatSummary.getSummary();
+            messages.add(new SystemMessage(summaryText));
+            log.debug("【会话记忆】加载摘要，sessionId={}", conversationId);
+        }
 
         java.util.Collections.reverse(logs);
 
+        // 历史助手消息只回灌【TEXT】自然语言部分，剥离体积庞大的【RESULT】JSON（图片URL/productCode/rating 等）。
+        // 这些字段是给前端渲染用的，模型维持上下文连贯并不需要，剥离后可大幅压缩历史 token、降低 prefill 耗时。
         List<Message> recentMessages = logs.stream()
-                .map(Log::toMessage)
+                .map(DatabaseChatMemory::toContextMessage)
                 .collect(Collectors.toList());
         messages.addAll(recentMessages);
 
         return messages;
+    }
+
+    /**
+     * 将日志转为喂给模型的上下文消息：ASSISTANT 消息若含结构化标签则只保留【TEXT】纯文本，其余原样。
+     */
+    private static Message toContextMessage(Log logEntry) {
+        if (logEntry.getMessageType() == MessageType.ASSISTANT) {
+            String raw = logEntry.getText();
+            if (raw != null && (raw.contains("【TEXT】") || raw.contains("【RESULT】"))) {
+                String pureText = com.ecommerceserver.utils.ExtractUtils.extractPureText(raw);
+                if (pureText != null && !pureText.isBlank()) {
+                    return new org.springframework.ai.chat.messages.AssistantMessage(pureText);
+                }
+            }
+        }
+        return logEntry.toMessage();
     }
 
     @Override

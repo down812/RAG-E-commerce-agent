@@ -193,24 +193,4 @@ public class ProductTool {
         putCache("categories", result);
         return result;
     }
-
-    @Tool(description = "【必须调用】获取热门商品列表，按销量排序返回热门商品。" +
-            "当用户没有明确需求、想看热门推荐时，必须调用此工具获取真实热门商品数据。" +
-            "返回字段说明：id(商品ID), productCode(商品编码), title(商品名称), brand(品牌), category(一级分类), subCategory(二级分类), basePrice(价格), salesCount(销量), status(1=上架/0=下架), mainImageUrl(主图URL)。" +
-            "适用于：用户没有明确需求时的商品推荐、热门商品展示。")
-    public List<ProductToolResult> getHotProducts(@ToolParam(required = false, description = "返回数量，默认5，最大7") Integer limit) {
-        int resultLimit = limit != null && limit > 0 ? Math.min(limit, 7) : 5;
-        String cacheKey = "hot:" + resultLimit;
-        List<ProductToolResult> cached = getCache(cacheKey);
-        if (cached != null) {
-            return cached;
-        }
-        QueryWrapper<Product> queryWrapper = new QueryWrapper<>();
-        queryWrapper.eq("status", 1)
-                .orderByDesc("base_price")
-                .last("LIMIT " + resultLimit);
-        List<ProductToolResult> result = Product.toToolResults(productMapper.selectList(queryWrapper));
-        putCache(cacheKey, result);
-        return result;
-    }
 }
