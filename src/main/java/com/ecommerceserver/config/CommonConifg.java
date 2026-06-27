@@ -51,7 +51,7 @@ public class CommonConifg {
                 .defaultTools(productTool)
                 .defaultAdvisors(
                         contextChatMemoryAdvisor,
-                        new SimpleLoggerAdvisor(),
+                       // new SimpleLoggerAdvisor(),
                         new MessageChatMemoryAdvisor(chatMemory),
                         new QuestionAnswerAdvisor(
                                 vectorStore,
@@ -73,7 +73,7 @@ public class CommonConifg {
                         .temperature(temperature)
                         .build())
                 .defaultAdvisors(
-                        new SimpleLoggerAdvisor()
+                        //new SimpleLoggerAdvisor()
                 )
                 .build();
     }
