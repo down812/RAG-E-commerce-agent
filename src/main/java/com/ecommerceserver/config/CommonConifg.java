@@ -4,6 +4,7 @@ import com.ecommerceserver.advisor.ContextChatMemoryAdvisor;
 import com.ecommerceserver.advisor.DatabaseChatMemory;
 import com.ecommerceserver.constants.SystemConstant;
 import com.ecommerceserver.tool.ProductTool;
+import okhttp3.OkHttpClient;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor;
@@ -15,6 +16,8 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class CommonConifg {
@@ -48,7 +51,7 @@ public class CommonConifg {
                 .defaultTools(productTool)
                 .defaultAdvisors(
                         contextChatMemoryAdvisor,
-//                        new SimpleLoggerAdvisor(),
+                        new SimpleLoggerAdvisor(),
                         new MessageChatMemoryAdvisor(chatMemory),
                         new QuestionAnswerAdvisor(
                                 vectorStore,
@@ -57,6 +60,20 @@ public class CommonConifg {
                                         .similarityThreshold(similarityThreshold)
                                         .build()
                         )
+                )
+                .build();
+    }
+
+    @Bean
+    public ChatClient summaryChatClient(OpenAiChatModel model) {
+        return ChatClient.builder(model)
+                .defaultSystem(SystemConstant.SUMMARY_SYSTEM_PROMPT)
+                .defaultOptions(OpenAiChatOptions.builder()
+                        .maxTokens(maxTokens)
+                        .temperature(temperature)
+                        .build())
+                .defaultAdvisors(
+                        new SimpleLoggerAdvisor()
                 )
                 .build();
     }

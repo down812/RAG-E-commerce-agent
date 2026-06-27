@@ -10,11 +10,13 @@ import com.ecommerceserver.constants.AIConstant;
 import com.ecommerceserver.context.LoginContext;
 import com.ecommerceserver.exception.GlobalException;
 import com.ecommerceserver.mapper.ProductMapper;
+import com.ecommerceserver.model.entity.ChatSummary;
 import com.ecommerceserver.model.entity.Log;
 import com.ecommerceserver.model.entity.Product;
 import com.ecommerceserver.model.vo.*;
 import com.ecommerceserver.result.Result;
 import com.ecommerceserver.service.ChatService;
+import com.ecommerceserver.service.ChatSummaryService;
 import com.ecommerceserver.service.LogService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +52,7 @@ public class ChatServiceImpl implements ChatService {
     private final LogService logService;
     private final DatabaseChatMemory databaseChatMemory;
     private final ProductMapper productMapper;
+    private final ChatSummaryService chatSummaryService;
 
     private final ConcurrentHashMap<String, Sinks.One<Void>> stopSignals = new ConcurrentHashMap<>();
 
@@ -120,6 +123,7 @@ public class ChatServiceImpl implements ChatService {
                 .doFinally(signalType -> {
                     stopSignals.remove(stopKey);
                     databaseChatMemory.removeStoppedMark(sessionId, messageId);
+                    chatSummaryService.generateSummaryAsync(sessionId);
                     log.info("【AI对话结束】sessionId={}, messageId={}, signal={}", sessionId, messageId, signalType);
                 })
                 .onErrorResume(e -> {
@@ -134,6 +138,7 @@ public class ChatServiceImpl implements ChatService {
             throw new GlobalException(Result.error(AIConstant.CONVERSATION_ID_NOT_NULL));
         }
         logService.remove(new LambdaQueryWrapper<Log>().eq(Log::getSessionId, sessionId));
+        chatSummaryService.remove(new LambdaQueryWrapper<ChatSummary>().eq(ChatSummary::getSessionId, sessionId));
     }
 
     @Override
@@ -388,164 +393,6 @@ public class ChatServiceImpl implements ChatService {
         }
         return sources;
     }
-
-   /* private RAGSource extractRAGSource(String ragSource) {
-        if (ragSource == null || ragSource.isEmpty()) {
-            return null;
-        }
-        
-        try {
-            String content = ragSource;
-            int sourceIdx = content.indexOf("【来源：");
-            if (sourceIdx >= 0) {
-                content = content.substring(sourceIdx + 5);
-                int endIdx = content.indexOf("】");
-                if (endIdx > 0) {
-                    content = content.substring(endIdx + 1);
-                }
-            }
-            
-            String productInfo = "";
-            String marketingDescription = "";
-            List<RAGSource.Faq> faqList = new ArrayList<>();
-            List<RAGSource.userReviews> reviewList = new ArrayList<>();
-            
-            int productInfoIdx = content.indexOf("【商品信息】");
-            int marketingIdx = content.indexOf("【营销描述】");
-            int faqIdx = content.indexOf("【官方问答】");
-            int reviewIdx = content.indexOf("【用户评价】");
-            
-            if (productInfoIdx >= 0) {
-                int end = findNextSectionStart(content, productInfoIdx);
-                productInfo = content.substring(productInfoIdx + 6, end > 0 ? end : content.length()).trim();
-            }
-            
-            if (marketingIdx >= 0) {
-                int end = findNextSectionStart(content, marketingIdx);
-                marketingDescription = content.substring(marketingIdx + 6, end > 0 ? end : content.length()).trim();
-            }
-            
-            if (faqIdx >= 0) {
-                int end = findNextSectionStart(content, faqIdx);
-                String faqSection = content.substring(faqIdx + 6, end > 0 ? end : content.length());
-                faqList = parseFaqSection(faqSection);
-            }
-            
-            if (reviewIdx >= 0) {
-                int end = findNextSectionStart(content, reviewIdx);
-                String reviewSection = content.substring(reviewIdx + 6, end > 0 ? end : content.length());
-                reviewList = parseReviewSection(reviewSection);
-            }
-            
-            return RAGSource.builder()
-                    .productInfo(productInfo)
-                    .marketingDescription(marketingDescription)
-                    .officialFAQ(faqList)
-                    .userReviews(reviewList)
-                    .build();
-                    
-        } catch (Exception e) {
-            log.warn("解析RAGSource失败: {}", e.getMessage());
-            return null;
-        }
-    }*/
-    
-    /*private int findNextSectionStart(String content, int currentIdx) {
-        String[] sections = {"【商品信息】", "【营销描述】", "【官方问答】", "【用户评价】"};
-        int nextIdx = -1;
-        for (String section : sections) {
-            int idx = content.indexOf(section, currentIdx + 6);
-            if (idx > 0 && (nextIdx < 0 || idx < nextIdx)) {
-                nextIdx = idx;
-            }
-        }
-        return nextIdx;
-    }
-    
-    private List<RAGSource.Faq> parseFaqSection(String section) {
-        List<RAGSource.Faq> faqList = new ArrayList<>();
-        if (section == null || section.isEmpty()) {
-            return faqList;
-        }
-        
-        String[] lines = section.split("\n");
-        String currentQuestion = "";
-        String currentAnswer = "";
-        boolean readingQuestion = false;
-        
-        for (String line : lines) {
-            line = line.trim();
-            if (line.startsWith("问：")) {
-                if (!currentQuestion.isEmpty() && !currentAnswer.isEmpty()) {
-                    faqList.add(RAGSource.Faq.builder()
-                            .question(currentQuestion.replace("问：", ""))
-                            .answer(currentAnswer.replace("答：", ""))
-                            .build());
-                }
-                currentQuestion = line;
-                currentAnswer = "";
-                readingQuestion = true;
-            } else if (line.startsWith("答：")) {
-                currentAnswer = line;
-                readingQuestion = false;
-            } else if (!line.isEmpty() && !readingQuestion && !currentAnswer.isEmpty()) {
-                currentAnswer += " " + line;
-            }
-        }
-        
-        if (!currentQuestion.isEmpty() && !currentAnswer.isEmpty()) {
-            faqList.add(RAGSource.Faq.builder()
-                    .question(currentQuestion.replace("问：", ""))
-                    .answer(currentAnswer.replace("答：", ""))
-                    .build());
-        }
-        
-        return faqList;
-    }
-    
-    private List<RAGSource.userReviews> parseReviewSection(String section) {
-        List<RAGSource.userReviews> reviewList = new ArrayList<>();
-        if (section == null || section.isEmpty()) {
-            return reviewList;
-        }
-        
-        String[] lines = section.split("\n");
-        String nickname = "";
-        String rating = "";
-        String comment = "";
-        
-        for (String line : lines) {
-            line = line.trim();
-            if (line.startsWith("- 用户：")) {
-                if (!nickname.isEmpty() || !comment.isEmpty()) {
-                    reviewList.add(RAGSource.userReviews.builder()
-                            .nickname(nickname.replace("用户：", ""))
-                            .rating(parseRatingToInt(rating.replace("评分：", "").replace("星", "")))
-                            .content(comment.replace("评价：", ""))
-                            .build());
-                }
-                nickname = line;
-                rating = "";
-                comment = "";
-            } else if (line.startsWith("评分：")) {
-                rating = line;
-            } else if (line.startsWith("评价：")) {
-                comment = line;
-            } else if (!line.isEmpty() && !comment.isEmpty()) {
-                comment += " " + line;
-            }
-        }
-        
-        if (!nickname.isEmpty() || !comment.isEmpty()) {
-            reviewList.add(RAGSource.userReviews.builder()
-                    .nickname(nickname.replace("用户：", ""))
-                    .rating(parseRatingToInt(rating.replace("评分：", "").replace("星", "")))
-                    .content(comment.replace("评价：", ""))
-                    .build());
-        }
-        
-        return reviewList;
-    }*/
 
     private Integer parseRatingToInt(String ratingStr) {
         if (ratingStr == null || ratingStr.trim().isEmpty()) {

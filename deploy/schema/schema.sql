@@ -225,6 +225,20 @@ CREATE TABLE `cart_item` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='购物车商品项表';
 
 -- ============================================
+-- 10. 会话摘要表 (chat_summart)
+-- ============================================
+DROP TABLE IF EXISTS `chat_summart`;
+CREATE TABLE `chat_summart` (
+                                `id` bigint NOT NULL AUTO_INCREMENT COMMENT '会话摘要ID',
+                                `session_id` varchar(255) DEFAULT NULL COMMENT '会话ID',
+                                `summary` text COMMENT '会话摘要',
+                                `created_at` datetime DEFAULT NULL COMMENT '创建时间',
+                                `updated_at` datetime DEFAULT NULL COMMENT '更新时间',
+                                PRIMARY KEY (`id`),
+                                KEY `idx_session_id` (`session_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话摘要实体';
+
+-- ============================================
 -- 表关系说明
 -- ============================================
 --

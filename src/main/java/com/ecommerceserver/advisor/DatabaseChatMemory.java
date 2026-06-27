@@ -1,25 +1,36 @@
 package com.ecommerceserver.advisor;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ecommerceserver.model.entity.ChatSummary;
 import com.ecommerceserver.model.entity.Log;
+import com.ecommerceserver.service.ChatSummaryService;
 import com.ecommerceserver.service.LogService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-@Component
 @Slf4j
+@Component
 public class DatabaseChatMemory implements ChatMemory {
 
     private final LogService logService;
+    private final ChatSummaryService chatSummaryService;
 
     public static final ConcurrentHashMap<String, ContextData> contextDataCache = new ConcurrentHashMap<>();
     private final Set<String> stoppedMessages = ConcurrentHashMap.newKeySet();
@@ -35,8 +46,9 @@ public class DatabaseChatMemory implements ChatMemory {
     }
 
     @Autowired
-    public DatabaseChatMemory(LogService logService) {
+    public DatabaseChatMemory(LogService logService, ChatSummaryService chatSummaryService) {
         this.logService = logService;
+        this.chatSummaryService = chatSummaryService;
     }
 
     @Override
@@ -90,27 +102,42 @@ public class DatabaseChatMemory implements ChatMemory {
 
     @Override
     public List<Message> get(String conversationId, int lastN) {
+        List<Message> messages = new ArrayList<>();
+
+        LambdaQueryWrapper<ChatSummary> summaryWrapper = new LambdaQueryWrapper<>();
+        summaryWrapper.eq(ChatSummary::getSessionId, conversationId);
+        ChatSummary chatSummary = chatSummaryService.getOne(summaryWrapper);
+
+        if (chatSummary != null && chatSummary.getSummary() != null && !chatSummary.getSummary().isBlank()) {
+            String summaryText = "【会话历史摘要】以下是之前对话的核心内容摘要，请结合此摘要理解当前对话：\n" + chatSummary.getSummary();
+            messages.add(new SystemMessage(summaryText));
+            log.debug("【会话记忆】加载摘要，sessionId={}", conversationId);
+        }
+
         ContextData ctx = contextDataCache.get(conversationId);
         Long userId = (ctx != null) ? ctx.userId : null;
 
-        int limit = Math.min(lastN, 20);
+        int limit = Math.min(lastN, 6);
 
         LambdaQueryWrapper<Log> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Log::getSessionId, conversationId)
-                .eq(Log::getStatus, 1);
+                .eq(Log::getStatus, 1)
+                .orderByDesc(Log::getCreatedAt)
+                .last("LIMIT " + limit);
         if (userId != null) {
             wrapper.eq(Log::getUserId, userId);
         }
-        wrapper.orderByDesc(Log::getCreatedAt)
-                .last("LIMIT " + limit);
 
         List<Log> logs = logService.list(wrapper);
 
         java.util.Collections.reverse(logs);
 
-        return logs.stream()
+        List<Message> recentMessages = logs.stream()
                 .map(Log::toMessage)
                 .collect(Collectors.toList());
+        messages.addAll(recentMessages);
+
+        return messages;
     }
 
     @Override
