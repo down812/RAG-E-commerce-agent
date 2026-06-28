@@ -55,6 +55,7 @@ public class ChatServiceImpl implements ChatService {
     private final ProductMapper productMapper;
     private final ChatSummaryService chatSummaryService;
     private final org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor questionAnswerAdvisor;
+    private final com.ecommerceserver.service.OSSService ossService;
 
     private final ConcurrentHashMap<String, Sinks.One<Void>> stopSignals = new ConcurrentHashMap<>();
 
@@ -87,6 +88,8 @@ public class ChatServiceImpl implements ChatService {
         // 通过按 sessionId 的静态快照跨线程透传，doFinally 中清理。
         com.ecommerceserver.tool.AiToolUserContext.bind(sessionId, userId);
         List<Media> mediaList = buildMediaList(files);
+        // 有图片时并行上传 OSS，失败单张跳过（不中断对话）
+        List<String> imageUrls = uploadImagesToOss(files, sessionId);
 
         Sinks.One<Void> stopSignal = Sinks.one();
         String stopKey = sessionId + ":" + messageId;
@@ -113,7 +116,8 @@ public class ChatServiceImpl implements ChatService {
                 .advisors(a -> {
                     a.param(CHAT_MEMORY_CONVERSATION_ID_KEY, sessionId)
                             .param("userId", userId != null ? userId : 0L)
-                            .param("messageId", messageId != null ? messageId : "");
+                            .param("messageId", messageId != null ? messageId : "")
+                            .param("imageUrls", imageUrls);
                     if (needRetrieval) {
                         a.advisors(questionAnswerAdvisor);
                     }
@@ -201,7 +205,9 @@ public class ChatServiceImpl implements ChatService {
                             .content(content)
                             .result(obj)
                             .messageType(log.getMessageType().name())
-                            .createdAt(log.getCreatedAt()).build());
+                            .createdAt(log.getCreatedAt())
+                            .metadata(log.getMetadata())
+                            .build());
                 } catch (Exception e) {
                     throw new GlobalException(Result.error(AIConstant.JSON_PARSE_FAILED));
                 }
@@ -211,7 +217,9 @@ public class ChatServiceImpl implements ChatService {
                         .messageId(log.getMessageId())
                         .content(log.getText())
                         .messageType(log.getMessageType().name())
-                        .createdAt(log.getCreatedAt()).build());
+                        .createdAt(log.getCreatedAt())
+                        .metadata(log.getMetadata())
+                        .build());
             }
         }
         return sessionInfos;
@@ -526,6 +534,24 @@ public class ChatServiceImpl implements ChatService {
             }
         }
         return true;
+    }
+
+    /** 将文件上传至 OSS，返回公开 URL 列表；单个文件失败时跳过，不中断对话。 */
+    private List<String> uploadImagesToOss(List<MultipartFile> files, String sessionId) {
+        if (files == null || files.isEmpty()) return List.of();
+        List<String> urls = new ArrayList<>();
+        for (MultipartFile f : files) {
+            if (f == null || f.isEmpty()) continue;
+            try {
+                String ext = com.ecommerceserver.utils.FileUtil.getFileSuffix(
+                        f.getOriginalFilename() != null ? f.getOriginalFilename() : "file.bin");
+                String objectName = "chat/" + sessionId + "/" + java.util.UUID.randomUUID() + ext;
+                urls.add(ossService.uploadFile(f, objectName));
+            } catch (Exception e) {
+                log.warn("图片上传OSS失败，跳过: {}", e.getMessage());
+            }
+        }
+        return urls;
     }
 
     private List<Media> buildMediaList(List<MultipartFile> files) {

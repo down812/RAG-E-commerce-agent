@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.Date;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -23,4 +24,6 @@ public class SessionInfo {
     private String messageType;
 
     private Date createdAt;
+
+    private Map<String, Object> metadata;
 }

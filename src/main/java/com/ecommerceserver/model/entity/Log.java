@@ -19,7 +19,7 @@ import java.util.Map;
  * @author dawn
  * @date 2025-04-10 17:04
  */
-@TableName(value = "chat_logs")
+@TableName(value = "chat_logs", autoResultMap = true)
 @Data
 @Builder
 @NoArgsConstructor

@@ -10,6 +10,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.util.List;
+
 import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY;
 
 @Slf4j
@@ -36,10 +38,12 @@ public class ContextChatMemoryAdvisor implements StreamAroundAdvisor {
         if (userId != null && sessionId != null) {
             Long uid = (userId instanceof Long) ? (Long) userId : Long.parseLong(userId.toString());
             String mid = messageId != null ? messageId.toString() : "";
+            @SuppressWarnings("unchecked")
+            List<String> imageUrls = (List<String>) request.advisorParams().get("imageUrls");
             log.debug("设置上下文, sessionId={}, userId={}, messageId={}", sessionId, uid, mid);
             DatabaseChatMemory.contextDataCache.put(
                     sessionId,
-                    new DatabaseChatMemory.ContextData(uid, mid)
+                    new DatabaseChatMemory.ContextData(uid, mid, imageUrls)
             );
         }
 

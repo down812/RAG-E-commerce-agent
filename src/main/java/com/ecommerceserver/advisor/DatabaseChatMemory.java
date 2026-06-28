@@ -20,7 +20,9 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -39,10 +41,12 @@ public class DatabaseChatMemory implements ChatMemory {
     public static class ContextData {
         public Long userId;
         public String messageId;
+        public List<String> imageUrls;
 
-        public ContextData(Long userId, String messageId) {
+        public ContextData(Long userId, String messageId, List<String> imageUrls) {
             this.userId = userId;
             this.messageId = messageId;
+            this.imageUrls = imageUrls;
         }
     }
 
@@ -66,6 +70,14 @@ public class DatabaseChatMemory implements ChatMemory {
             if (ctx != null) {
                 logEntry.setUserId(ctx.userId);
                 logEntry.setMessageId(ctx.messageId);
+                // USER 消息携带 imageUrls 时写入 metadata，供前端回显图片
+                if (message.getMessageType() == MessageType.USER
+                        && ctx.imageUrls != null && !ctx.imageUrls.isEmpty()) {
+                    Map<String, Object> meta = logEntry.getMetadata() != null
+                            ? new HashMap<>(logEntry.getMetadata()) : new HashMap<>();
+                    meta.put("imageUrls", ctx.imageUrls);
+                    logEntry.setMetadata(meta);
+                }
             }
 
             String stopKey = (ctx != null && ctx.messageId != null) ? conversationId + ":" + ctx.messageId : null;
