@@ -67,7 +67,7 @@ public class CommonConifg {
                 .defaultTools(productTool, cartTool)
                 .defaultAdvisors(
                         contextChatMemoryAdvisor,
-                        new SimpleLoggerAdvisor(),
+                        //new SimpleLoggerAdvisor(),
                         new MessageChatMemoryAdvisor(chatMemory)
                         // QuestionAnswerAdvisor 不再默认挂载，改由 ChatServiceImpl 按需添加
                 )
@@ -79,7 +79,7 @@ public class CommonConifg {
         return ChatClient.builder(model)
                 .defaultSystem(SystemConstant.SUMMARY_SYSTEM_PROMPT)
                 .defaultOptions(OpenAiChatOptions.builder()
-                        .maxTokens(maxTokens)
+                        .maxTokens(600)
                         .temperature(temperature)
                         .build())
                 .defaultAdvisors(

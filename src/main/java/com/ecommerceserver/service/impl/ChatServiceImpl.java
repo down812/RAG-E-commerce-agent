@@ -7,6 +7,7 @@ import com.ecommerceserver.Enum.AIRspEnum;
 import com.ecommerceserver.Enum.SourceEnum;
 import com.ecommerceserver.advisor.DatabaseChatMemory;
 import com.ecommerceserver.constants.AIConstant;
+import com.ecommerceserver.constants.SystemConstant;
 import com.ecommerceserver.context.LoginContext;
 import com.ecommerceserver.exception.GlobalException;
 import com.ecommerceserver.mapper.ProductMapper;
@@ -117,6 +118,10 @@ public class ChatServiceImpl implements ChatService {
                         a.advisors(questionAnswerAdvisor);
                     }
                 });
+
+        if (!mediaList.isEmpty()) {
+            promptSpec.system(SystemConstant.IMAGE_CATEGORY_TABLE);
+        }
 
         Flux<String> chunkFlux = promptSpec
                 .stream()
@@ -487,16 +492,29 @@ public class ChatServiceImpl implements ChatService {
             "好的", "嗯嗯", "ok", "收到", "知道了"
     );
 
+    // 加购/确认类操作指令：无需检索知识库，直接走工具调用即可
+    private static final java.util.Set<String> NO_RETRIEVAL_PATTERNS = java.util.Set.of(
+            "加入购物车", "加购", "加到购物车", "帮我加", "放入购物车",
+            "就要这个", "就这个", "确认购买", "确认下单", "帮我买",
+            "我要", "需要几件", "要几件", "加几件", "买几件"
+    );
+
     /**
      * 判断本轮是否需要检索向量知识库。
      * 策略：保守优先——默认需要检索（保证回答质量），
-     * 仅当消息很短且整体就是纯问候/寒暄时才跳过，避免对“你好”这类也触发跨厂商 embedding + ES 检索。
+     * 仅当消息很短且整体就是纯问候/寒暄，或属于加购/确认等操作指令时才跳过。
      */
     private boolean needKnowledgeRetrieval(String content) {
         if (content == null || content.isBlank()) {
             return false;
         }
         String text = content.trim().toLowerCase();
+        // 操作类指令无论长短都不需要知识库
+        for (String p : NO_RETRIEVAL_PATTERNS) {
+            if (text.contains(p)) {
+                return false;
+            }
+        }
         // 较长的输入大概率含实质诉求，直接走检索
         if (text.length() > 15) {
             return true;

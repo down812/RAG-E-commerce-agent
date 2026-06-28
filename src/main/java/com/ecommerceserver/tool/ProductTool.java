@@ -98,7 +98,7 @@ public class ProductTool {
             "- status: 商品状态（1=上架，0=下架）" +
             "- sortBy: 排序字段（可选：price、created_at）" +
             "- sortOrder: 排序方向（可选：asc、desc，默认desc）" +
-            "- limit: 返回数量限制（默认10，最大50）" +
+            "- limit: 返回数量限制（默认5，最大5）" +
             "返回字段说明：id(商品ID), productCode(商品编码), title(商品名称), brand(品牌), category(一级分类), subCategory(二级分类), basePrice(价格), salesCount(销量), status(1=上架/0=下架), mainImageUrl(主图URL)。" +
             "适用于：用户想查找特定商品、了解有哪些商品可选、比较不同商品时。")
     public List<ProductToolResult> searchProducts(
@@ -111,7 +111,7 @@ public class ProductTool {
             @ToolParam(required = false, description = "商品状态：1=上架，0=下架，默认查询上架商品") Integer status,
             @ToolParam(required = false, description = "排序字段：price(价格)、created_at(创建时间)") String sortBy,
             @ToolParam(required = false, description = "排序方向：asc(升序)、desc(降序)，默认降序") String sortOrder,
-            @ToolParam(required = false, description = "返回结果数量限制，默认5，最大7") Integer limit) {
+            @ToolParam(required = false, description = "返回结果数量限制，默认5，最大5") Integer limit) {
 
         QueryWrapper<Product> queryWrapper = new QueryWrapper<>();
 
@@ -124,8 +124,8 @@ public class ProductTool {
         }
 
         queryWrapper.eq(brand != null && !brand.trim().isEmpty(), "brand", brand)
-                .eq(category != null && !category.trim().isEmpty(), "category", category)
-                .eq(subCategory != null && !subCategory.trim().isEmpty(), "sub_category", subCategory)
+                /*.eq(category != null && !category.trim().isEmpty(), "category", category)
+                .eq(subCategory != null && !subCategory.trim().isEmpty(), "sub_category", subCategory)*/
                 .ge(minPrice != null, "base_price", minPrice)
                 .le(maxPrice != null, "base_price", maxPrice);
 
@@ -151,7 +151,7 @@ public class ProductTool {
             queryWrapper.orderByDesc("base_price");
         }
 
-        int resultLimit = limit != null && limit > 0 ? Math.min(limit, 7) : 5;
+        int resultLimit = limit != null && limit > 0 ? Math.min(limit, 5) : 5;
         queryWrapper.last("LIMIT " + resultLimit);
 
         return Product.toToolResults(productMapper.selectList(queryWrapper));
@@ -167,19 +167,19 @@ public class ProductTool {
             @ToolParam(required = false, description = "二级分类名称，精确匹配，如'精华'、'智能手机'") String subCategory,
             @ToolParam(required = false, description = "最低价格筛选") BigDecimal minPrice,
             @ToolParam(required = false, description = "最高价格筛选") BigDecimal maxPrice,
-            @ToolParam(required = false, description = "返回结果数量限制，默认5，最大7") Integer limit) {
+            @ToolParam(required = false, description = "返回结果数量限制，默认5，最大5") Integer limit) {
 
         QueryWrapper<Product> queryWrapper = new QueryWrapper<>();
 
         queryWrapper.like(brandKeyword != null && !brandKeyword.trim().isEmpty(), "brand", brandKeyword)
                 .eq(category != null && !category.trim().isEmpty(), "category", category)
-                .eq(subCategory != null && !subCategory.trim().isEmpty(), "sub_category", subCategory)
+                .like(subCategory != null && !subCategory.trim().isEmpty(), "sub_category", subCategory)
                 .ge(minPrice != null, "base_price", minPrice)
                 .le(maxPrice != null, "base_price", maxPrice)
                 .eq("status", 1)
                 .orderByDesc("base_price");
 
-        int resultLimit = limit != null && limit > 0 ? Math.min(limit, 7) : 5;
+        int resultLimit = limit != null && limit > 0 ? Math.min(limit, 5) : 5;
         queryWrapper.last("LIMIT " + resultLimit);
 
         return Product.toToolResults(productMapper.selectList(queryWrapper));
