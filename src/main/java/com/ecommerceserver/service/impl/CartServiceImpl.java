@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -70,6 +71,7 @@ public class CartServiceImpl implements CartService {
             // 更新数量
             existingItem.setQuantity(existingItem.getQuantity() + addToCartDTO.getQuantity());
             existingItem.setSubtotal(existingItem.getPrice().multiply(BigDecimal.valueOf(existingItem.getQuantity())));
+            existingItem.setUpdatedAt(LocalDateTime.now());
             cartItemMapper.updateById(existingItem);
         } else {
             // 新增购物车项
@@ -80,6 +82,8 @@ public class CartServiceImpl implements CartService {
                     .quantity(addToCartDTO.getQuantity())
                     .price(sku.getPrice())
                     .subtotal(sku.getPrice().multiply(BigDecimal.valueOf(addToCartDTO.getQuantity())))
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
                     .build();
             cartItemMapper.insert(newItem);
         }
@@ -311,6 +315,8 @@ public class CartServiceImpl implements CartService {
                     .userId(userId)
                     .totalAmount(BigDecimal.ZERO)
                     .totalItems(0)
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
                     .build();
             cartMapper.insert(cart);
         }
@@ -333,6 +339,7 @@ public class CartServiceImpl implements CartService {
 
         cart.setTotalItems(totalItems);
         cart.setTotalAmount(totalAmount);
+        cart.setUpdatedAt(LocalDateTime.now());
         cartMapper.updateById(cart);
     }
 

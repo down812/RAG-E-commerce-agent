@@ -1,10 +1,16 @@
 package com.ecommerceserver.tool;
 
 import cn.hutool.core.collection.CollectionUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ecommerceserver.mapper.ProductMapper;
+import com.ecommerceserver.mapper.ProductSkuAttributeMapper;
+import com.ecommerceserver.mapper.ProductSkuMapper;
 import com.ecommerceserver.model.dto.ProductToolResult;
+import com.ecommerceserver.model.dto.SkuInfo;
 import com.ecommerceserver.model.entity.Product;
+import com.ecommerceserver.model.entity.ProductSku;
+import com.ecommerceserver.model.entity.ProductSkuAttribute;
 import com.ecommerceserver.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -25,6 +32,8 @@ import java.util.concurrent.TimeUnit;
 public class ProductTool {
     private final ProductService productService;
     private final ProductMapper productMapper;
+    private final ProductSkuMapper productSkuMapper;
+    private final ProductSkuAttributeMapper productSkuAttributeMapper;
 
     private static final long CACHE_TTL_MS = TimeUnit.MINUTES.toMillis(5);
     private final ConcurrentHashMap<String, CacheEntry<?>> cache = new ConcurrentHashMap<>();
@@ -191,6 +200,58 @@ public class ProductTool {
                 .orderByDesc("count");
         List<ProductToolResult> result = Product.toToolResults(productMapper.selectList(queryWrapper));
         putCache("categories", result);
+        return result;
+    }
+
+    @Tool(description = "【加入购物车前必须调用】查询指定商品的可选规格(SKU)列表。" +
+            "当用户明确要把某个商品加入购物车时，先用本工具传入该商品的productId查出其可选规格，" +
+            "再让用户确认要哪个规格，然后用addToCart加购。" +
+            "返回字段说明：skuId(规格ID，加购时传入), skuCode(规格编码), price(规格价格), spec(规格描述，如'颜色:黑色, 容量:128GB')。")
+    public List<SkuInfo> getProductSkus(@ToolParam(description = "商品ID") Long productId) {
+        if (productId == null) {
+            return new ArrayList<>();
+        }
+        String cacheKey = "skus:" + productId;
+        List<SkuInfo> cached = getCache(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        // 1. 查该商品上架的 SKU
+        List<ProductSku> skus = productSkuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getProductId, productId)
+                .eq(ProductSku::getStatus, 1));
+        if (CollectionUtil.isEmpty(skus)) {
+            return new ArrayList<>();
+        }
+
+        // 2. 一次性批量查这些 SKU 的属性，避免 N+1
+        List<Long> skuIds = skus.stream().map(ProductSku::getId).toList();
+        List<ProductSkuAttribute> attrs = productSkuAttributeMapper.selectList(
+                new LambdaQueryWrapper<ProductSkuAttribute>().in(ProductSkuAttribute::getSkuId, skuIds));
+        Map<Long, List<ProductSkuAttribute>> attrsBySkuId = attrs.stream()
+                .collect(Collectors.groupingBy(ProductSkuAttribute::getSkuId));
+
+        // 3. 组装 SkuInfo（规格拼接方式与 CartServiceImpl.convertToCartItemVO 保持一致）
+        List<SkuInfo> result = skus.stream().map(sku -> {
+            List<ProductSkuAttribute> skuAttrs = attrsBySkuId.get(sku.getId());
+            String spec;
+            if (skuAttrs != null && !skuAttrs.isEmpty()) {
+                spec = skuAttrs.stream()
+                        .map(a -> a.getAttrName() + ":" + a.getAttrValue())
+                        .collect(Collectors.joining(", "));
+            } else {
+                spec = "SKU:" + sku.getSkuCode();
+            }
+            return SkuInfo.builder()
+                    .skuId(sku.getId())
+                    .skuCode(sku.getSkuCode())
+                    .price(sku.getPrice())
+                    .spec(spec)
+                    .build();
+        }).collect(Collectors.toList());
+
+        putCache(cacheKey, result);
         return result;
     }
 }

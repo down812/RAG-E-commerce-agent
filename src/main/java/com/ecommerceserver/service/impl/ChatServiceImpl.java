@@ -82,6 +82,9 @@ public class ChatServiceImpl implements ChatService {
 
 
         Long userId = LoginContext.getUserId();
+        // 把 userId 绑定到 AI 工具上下文：工具（如 addToCart）运行在 reactor 线程取不到 ThreadLocal，
+        // 通过按 sessionId 的静态快照跨线程透传，doFinally 中清理。
+        com.ecommerceserver.tool.AiToolUserContext.bind(sessionId, userId);
         List<Media> mediaList = buildMediaList(files);
 
         Sinks.One<Void> stopSignal = Sinks.one();
@@ -134,6 +137,7 @@ public class ChatServiceImpl implements ChatService {
                 .doFinally(signalType -> {
                     stopSignals.remove(stopKey);
                     databaseChatMemory.removeStoppedMark(sessionId, messageId);
+                    com.ecommerceserver.tool.AiToolUserContext.clear(sessionId);
                     chatSummaryService.generateSummaryAsync(sessionId);
                     log.info("【AI对话结束】sessionId={}, messageId={}, signal={}", sessionId, messageId, signalType);
                 })

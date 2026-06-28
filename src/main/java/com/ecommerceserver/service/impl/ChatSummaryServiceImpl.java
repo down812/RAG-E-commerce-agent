@@ -138,22 +138,7 @@ public class ChatSummaryServiceImpl extends ServiceImpl<ChatSummaryMapper, ChatS
             if (existing != null) {
                 conversationHistory += "【会话摘要】\n" + existing.getSummary() + "\n";
             }
-
-            int maxChars = 8000;
-            if (conversationHistory.length() > maxChars) {
-                int preserveCount = (int) (logs.size() * 0.7);
-                List<Log> preservedLogs = logs.subList(Math.max(0, logs.size() - preserveCount), logs.size());
-                String recentHistory = preservedLogs.stream()
-                        .map(log -> log.getMessageType().name() + ": " + log.getText())
-                        .collect(Collectors.joining("\n"));
-                int recentLength = recentHistory.length();
-                if (recentLength > maxChars) {
-                    conversationHistory = recentHistory.substring(0, maxChars) + "\n...(会话后半部分已截断)";
-                } else {
-                    conversationHistory = recentHistory;
-                }
-                log.warn("[会话摘要] sessionId={} 会话内容过长，保留最近{}条消息进行摘要", sessionId, preservedLogs.size());
-            }
+            log.debug("会话历史: {}", conversationHistory);
 
             String summary = summaryChatClient.prompt()
                     .user("请根据以下对话历史生成摘要：\n" + conversationHistory)
