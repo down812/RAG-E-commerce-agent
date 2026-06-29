@@ -25,6 +25,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -71,9 +72,10 @@ public class ChatSummaryServiceImpl extends ServiceImpl<ChatSummaryMapper, ChatS
             LambdaQueryWrapper<Log> wrapper = new LambdaQueryWrapper<>();
             wrapper.eq(Log::getSessionId, sessionId)
                     .eq(Log::getStatus, 1)
-                    .orderByAsc(Log::getCreatedAt)
+                    .orderByDesc(Log::getCreatedAt)
                     .last("LIMIT " + 6);
             List<Log> logs = logService.list(wrapper);
+            Collections.reverse(logs);
 
             if (logs == null || logs.isEmpty()) {
                 log.warn("[会话摘要] sessionId={} 无会话记录，跳过摘要生成", sessionId);
@@ -97,23 +99,23 @@ public class ChatSummaryServiceImpl extends ServiceImpl<ChatSummaryMapper, ChatS
                                     switch (AIRspEnum.fromCode(result.getResponseType())) {
                                         case RECOMMENDATION -> {
                                             obj = BeanUtil.copyProperties(result, AIRecommendationVO.class);
-                                            sb.append("推荐的物品的商品标题和基础价格：");
+                                            sb.append("推荐的物品的商品ID、标题和基础价格：");
                                             if (obj != null && ((AIRecommendationVO) obj).getRecommendations() != null) {
-                                                sb.append(((AIRecommendationVO) obj).getRecommendations().stream().map(product -> product.getProductName() + " " + product.getPrice() + "; ").collect(Collectors.joining()));
+                                                sb.append(((AIRecommendationVO) obj).getRecommendations().stream().map(product -> product.getProductId() + " " + product.getProductName() + " " + product.getPrice() + "; ").collect(Collectors.joining()));
                                             }
                                         }
                                         case SEARCHRESULT -> {
                                             obj = BeanUtil.copyProperties(result, AISearchResultVO.class);
-                                            sb.append("搜索结果：");
+                                            sb.append("搜索结果的商品ID、标题和基础价格：");
                                             if (obj != null && ((AISearchResultVO) obj).getProducts() != null) {
-                                                sb.append(((AISearchResultVO) obj).getProducts().stream().map(product -> product.getProductName() + " " + product.getPrice() + "; ").collect(Collectors.joining()));
+                                                sb.append(((AISearchResultVO) obj).getProducts().stream().map(product -> product.getProductId() + " " + product.getProductName() + " " + product.getPrice() + "; ").collect(Collectors.joining()));
                                             }
                                         }
                                         case IMAGE_SEARCH -> {
                                             obj = BeanUtil.copyProperties(result, AIImageSearchVO.class);
-                                            sb.append("图像搜索结果：");
+                                            sb.append("图像搜索结果的商品ID、标题和基础价格：");
                                             if (obj != null && ((AIImageSearchVO) obj).getImageSearchProducts() != null) {
-                                                sb.append(((AIImageSearchVO) obj).getImageSearchProducts().stream().map(product -> product.getProductName() + " " + product.getPrice() + "; ").collect(Collectors.joining()));
+                                                sb.append(((AIImageSearchVO) obj).getImageSearchProducts().stream().map(product -> product.getProductId() + " " + product.getProductName() + " " + product.getPrice() + "; ").collect(Collectors.joining()));
                                             }
                                         }
                                         default -> obj = result;

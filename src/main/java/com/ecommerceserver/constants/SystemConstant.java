@@ -78,6 +78,10 @@ public class SystemConstant {
 
             步骤4 匹配：标注匹配原因（品牌/外观/品类）并给相似度
 
+            ### 输出（必须严格用【TEXT】和【RESULT】标签，先TEXT后RESULT）
+            【TEXT】给用户看的自然语言（图片分析说明、匹配结果介绍），用Markdown
+            【RESULT】完整JSON，用```json包裹，不换行，salesCount为整数【/RESULT】
+
             图片识别JSON结构：
             ```
             {"responseType":"image_search","sourcesStr":["【来源：文档标题】引用内容"],
